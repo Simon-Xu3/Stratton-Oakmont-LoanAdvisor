@@ -1,8 +1,16 @@
 import { FormEvent, useState } from 'react';
-import { ArrowRight, Building2, CircleDollarSign, MapPin, UserRound } from 'lucide-react';
+import {
+  ArrowRight,
+  Building2,
+  CircleDollarSign,
+  FileCheck2,
+  MapPin,
+  UserRound
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { createApplication } from '../api/api';
-import type { CreateApplicationInput } from '../types';
+import { createApplicationWithDocuments } from '../api/api';
+import { FileUpload } from '../components/FileUpload';
+import type { CreateApplicationInput, DocumentType } from '../types';
 
 const initialForm: CreateApplicationInput = {
   applicantName: 'Alex Tan',
@@ -12,9 +20,22 @@ const initialForm: CreateApplicationInput = {
   address: '10 Example Street, Singapore'
 };
 
+const uploadFields: Array<{ type: DocumentType; label: string; accept: string }> = [
+  { type: 'application_form', label: 'Application form JSON', accept: '.json,application/json' },
+  { type: 'payslip', label: 'Payslip JSON', accept: '.json,application/json' },
+  { type: 'bank_statement', label: 'Bank statement CSV', accept: '.csv,text/csv' }
+];
+
+const emptyFiles: Record<DocumentType, File | null> = {
+  application_form: null,
+  payslip: null,
+  bank_statement: null
+};
+
 export function Upload() {
   const navigate = useNavigate();
   const [form, setForm] = useState<CreateApplicationInput>(initialForm);
+  const [files, setFiles] = useState(emptyFiles);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,13 +49,20 @@ export function Upload() {
     }));
   }
 
+  function updateFile(type: DocumentType, file: File | null) {
+    setFiles((current) => ({
+      ...current,
+      [type]: file
+    }));
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsSubmitting(true);
     setError(null);
 
     try {
-      const application = await createApplication(form);
+      const application = await createApplicationWithDocuments(form, files);
       navigate(`/result/${application.id}`);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Unable to create application.');
@@ -48,8 +76,8 @@ export function Upload() {
       <section className="mx-auto grid min-h-[calc(100vh-5rem)] w-full max-w-7xl gap-8 px-5 py-12 sm:px-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:px-10">
         <form className="border border-line bg-white p-7" onSubmit={handleSubmit}>
           <div className="border-l-[10px] border-gold pl-7">
-            <p className="text-sm font-bold uppercase text-black">Client application intake</p>
-            <h1 className="mt-3 text-5xl font-bold leading-none text-black">Create application</h1>
+            <p className="text-sm font-bold uppercase text-black">AI review intake</p>
+            <h1 className="mt-3 text-5xl font-bold leading-none text-black">Create review file</h1>
           </div>
 
           <div className="mt-9 grid gap-5 sm:grid-cols-2">
@@ -127,6 +155,28 @@ export function Upload() {
             </label>
           </div>
 
+          <div className="mt-9 border-t border-line pt-7">
+            <div className="border-l-[8px] border-gold pl-5">
+              <p className="flex items-center gap-2 text-sm font-bold uppercase text-black">
+                <FileCheck2 className="size-4 text-gold" aria-hidden="true" />
+                Documents for AI review
+              </p>
+            </div>
+
+            <div className="mt-5 grid gap-5 lg:grid-cols-3">
+              {uploadFields.map((field) => (
+                <FileUpload
+                  key={field.type}
+                  label={field.label}
+                  accept={field.accept}
+                  file={files[field.type]}
+                  disabled={isSubmitting}
+                  onFileChange={(file) => updateFile(field.type, file)}
+                />
+              ))}
+            </div>
+          </div>
+
           {error ? (
             <div className="mt-5 border-l-[6px] border-rose-600 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
               {error}
@@ -139,7 +189,7 @@ export function Upload() {
               type="submit"
               disabled={isSubmitting}
             >
-              {isSubmitting ? 'Creating' : 'Create application'}
+              {isSubmitting ? 'Creating' : 'Create AI review'}
               <ArrowRight className="size-4 text-gold" aria-hidden="true" />
             </button>
           </div>
@@ -147,8 +197,8 @@ export function Upload() {
 
         <aside className="border border-line bg-white p-7 text-black">
           <div className="border-l-[6px] border-gold pl-5">
-            <p className="text-xs font-bold uppercase text-black">Application record</p>
-            <h2 className="mt-2 text-3xl font-bold leading-tight text-black">Initial file status</h2>
+            <p className="text-xs font-bold uppercase text-black">AI review package</p>
+            <h2 className="mt-2 text-3xl font-bold leading-tight text-black">Ready for analysis</h2>
           </div>
           <dl className="mt-7 grid gap-4 text-base">
             <div className="border border-line bg-slate-50 px-4 py-3">
@@ -157,7 +207,7 @@ export function Upload() {
             </div>
             <div className="border border-line bg-slate-50 px-4 py-3">
               <dt className="text-xs font-bold uppercase text-steel">Next step</dt>
-              <dd className="mt-1 font-bold text-black">Document collection</dd>
+              <dd className="mt-1 font-bold text-black">Rules, policy, and AI guidance</dd>
             </div>
           </dl>
         </aside>

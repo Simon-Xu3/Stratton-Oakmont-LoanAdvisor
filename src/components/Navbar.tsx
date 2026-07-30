@@ -3,16 +3,23 @@ import { NavLink } from 'react-router-dom';
 
 const navItems = [
   { to: '/', label: 'Overview' },
-  { to: '/upload', label: 'Create Application' }
+  { to: '/upload', label: 'Create AI Review' }
 ];
 
 export function Navbar() {
   return (
     <header className="border-b border-line bg-white text-midnight">
       <div className="mx-auto flex min-h-20 w-full max-w-7xl items-center justify-between px-5 sm:px-8 lg:px-10">
-        <NavLink className="text-3xl font-normal tracking-normal text-black sm:text-4xl" to="/">
-          Loan Verification
-        </NavLink>
+
+        <div className="font-normal tracking-normal text-black">
+          <p className="text-3xl font-serif tracking-wide">
+            Stratton Oakmont
+          </p>
+
+          <h3 className="text-xl ">
+            Loan Advisor
+          </h3>
+        </div>
 
         <nav className="hidden items-center gap-8 sm:flex">
           {navItems.map((item) => {

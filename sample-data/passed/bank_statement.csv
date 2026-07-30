@@ -1,0 +1,6 @@
+transaction_date,description,amount,category
+2026-07-25,Salary ABC Technologies,8000,salary
+2026-06-25,Salary ABC Technologies,7980,salary
+2026-05-25,Salary ABC Technologies,8020,salary
+2026-07-02,Rent,-2200,rent
+2026-06-10,Groceries,-320,expense

@@ -14,7 +14,25 @@ CREATE TABLE IF NOT EXISTS documents (
     application_id INTEGER REFERENCES applications(id) ON DELETE CASCADE,
     document_type VARCHAR(50) NOT NULL,
     file_name VARCHAR(255) NOT NULL,
-    storage_key VARCHAR(500),
     extracted_data JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS bank_transactions (
+    id SERIAL PRIMARY KEY,
+    application_id INTEGER REFERENCES applications(id) ON DELETE CASCADE,
+    transaction_date DATE NOT NULL,
+    description VARCHAR(255),
+    amount NUMERIC(12, 2) NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS verification_results (
+    id SERIAL PRIMARY KEY,
+    application_id INTEGER REFERENCES applications(id) ON DELETE CASCADE,
+    check_name VARCHAR(100) NOT NULL,
+    result VARCHAR(30) NOT NULL,
+    details TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
