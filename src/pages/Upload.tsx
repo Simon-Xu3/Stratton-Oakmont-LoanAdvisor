@@ -76,7 +76,7 @@ export function Upload() {
       <section className="mx-auto grid min-h-[calc(100vh-5rem)] w-full max-w-7xl gap-8 px-5 py-12 sm:px-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:px-10">
         <form className="border border-line bg-white p-7" onSubmit={handleSubmit}>
           <div className="border-l-[10px] border-gold pl-7">
-            <p className="text-sm font-bold uppercase text-black">AI review intake</p>
+            <p className="text-sm font-bold uppercase text-black">AI assisted review intake</p>
             <h1 className="mt-3 text-5xl font-bold leading-none text-black">Create review file</h1>
           </div>
 

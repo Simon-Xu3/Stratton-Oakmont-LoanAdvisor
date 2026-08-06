@@ -218,20 +218,20 @@ export function Result() {
 
             <section className="border border-line bg-white p-7">
               <div className="border-l-[8px] border-gold pl-6">
-                <p className="text-sm font-bold uppercase text-black">AI review guidance</p>
+                <p className="text-sm font-bold uppercase text-black">Review guidance</p>
               </div>
 
               {policyExplanation ? (
                 <>
                   <div className="mt-6 grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
                     <div className={`border px-4 py-3 ${riskTone(policyExplanation.riskLevel)}`}>
-                      <p className="text-xs font-bold uppercase">AI risk level</p>
+                      <p className="text-xs font-bold uppercase">Risk level</p>
                       <p className="mt-1 text-xl font-bold capitalize">
                         {policyExplanation.riskLevel}
                       </p>
                     </div>
                     <div className="border border-line bg-slate-50 px-4 py-3">
-                      <p className="text-xs font-bold uppercase text-steel">AI risk summary</p>
+                      <p className="text-xs font-bold uppercase text-steel">Risk summary</p>
                       <p className="mt-2 text-sm font-semibold leading-6 text-steel">
                         {policyExplanation.summary}
                       </p>
@@ -244,7 +244,7 @@ export function Result() {
 
                   <div className="mt-4 grid gap-4 lg:grid-cols-2">
                     <div className="border border-line bg-slate-50 px-4 py-3">
-                      <h3 className="text-xs font-bold uppercase text-steel">AI recommended next actions</h3>
+                      <h3 className="text-xs font-bold uppercase text-steel">Recommended next actions</h3>
                       {policyExplanation.recommendedActions.length === 0 ? (
                         <p className="mt-2 text-sm font-semibold text-steel">No actions returned.</p>
                       ) : (
@@ -257,7 +257,7 @@ export function Result() {
                     </div>
 
                     <div className="border border-line bg-slate-50 px-4 py-3">
-                      <h3 className="text-xs font-bold uppercase text-steel">AI requested documents</h3>
+                      <h3 className="text-xs font-bold uppercase text-steel">Requested documents</h3>
                       {policyExplanation.requiredDocuments.length === 0 ? (
                         <p className="mt-2 text-sm font-semibold text-steel">No extra documents returned.</p>
                       ) : (
