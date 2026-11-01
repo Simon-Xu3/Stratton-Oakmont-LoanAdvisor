@@ -77,19 +77,31 @@ export interface VerificationSummary {
 export interface RelatedPolicy {
   id: string;
   title: string;
-  tags: string[];
+  version: string;
+  source: string;
   content: string;
+  appliesTo: { checkName: string; results: string[]; includeDetailsContaining?: string; excludeDetailsContaining?: string }[];
+  actions?: string[];
+  documents?: string[];
+}
+
+export interface CitedGuidance {
+  text: string;
+  policyIds: string[];
+  checkNames: string[];
 }
 
 export interface PolicyExplanation {
   applicationId: number;
   status: ApplicationStatus;
   relatedPolicies: RelatedPolicy[];
+  guidanceSource: 'ai' | 'unavailable';
+  warning: string | null;
   summary: string;
-  riskLevel: 'low' | 'medium' | 'high';
+  riskLevel: 'low' | 'medium' | 'high' | 'not_assessed';
   explanation: string;
-  recommendedActions: string[];
-  requiredDocuments: string[];
+  recommendedActions: CitedGuidance[];
+  requiredDocuments: CitedGuidance[];
 }
 
 export interface ApiResponse<T> {

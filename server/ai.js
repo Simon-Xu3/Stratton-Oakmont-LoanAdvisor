@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 function makeAiError(code, message, statusCode = 503) {
   const error = new Error(message);
   error.code = code;
@@ -5,48 +7,25 @@ function makeAiError(code, message, statusCode = 503) {
   return error;
 }
 
-const policies = [
-  {
-    id: 'DOC-001',
-    title: 'Required Documents Policy',
-    tags: ['document_completeness', 'additional_documents_required'],
-    content:
-      'Applications must include an application form, a payslip, and a bank statement before final review.'
-  },
-  {
-    id: 'ID-001',
-    title: 'Applicant Identity Match Policy',
-    tags: ['name_match'],
-    content:
-      'If the applicant name in supporting documents does not match the application, the file should be reviewed manually.'
-  },
-  {
-    id: 'EMP-001',
-    title: 'Employer Match Policy',
-    tags: ['employer_match'],
-    content:
-      'Employer names from the application and payslip should refer to the same employer before income is accepted.'
-  },
-  {
-    id: 'INC-001',
-    title: 'Income Verification Policy',
-    tags: ['payslip_income_match', 'bank_income_match', 'additional_documents_required'],
-    content:
-      'Income differences above 10% may require additional documents, and differences above 15% should be escalated.'
-  },
-  {
-    id: 'REV-001',
-    title: 'Manual Review Policy',
-    tags: ['manual_review_required', 'salary_stability'],
-    content:
-      'Files with material identity, employer, income, or salary stability concerns should be sent to manual review.'
+const policies = JSON.parse(readFileSync(new URL('./policies.json', import.meta.url), 'utf8'));
+
+function supportsCheck(policy, check) {
+  return policy.appliesTo.some(
+    (scope) => scope.checkName === check.checkName && scope.results.includes(check.result) &&
+      (!scope.includeDetailsContaining || check.details?.includes(scope.includeDetailsContaining)) &&
+      (!scope.excludeDetailsContaining || !check.details?.includes(scope.excludeDetailsContaining))
+  );
+}
+
+export function findRelatedPolicies(checks) {
+  const actionableChecks = checks.filter((check) => check.result !== 'passed');
+  if (actionableChecks.length === 0) {
+    // A clean review needs a small amount of context, not the entire corpus.
+    return policies.filter((policy) => ['DOC-005', 'INC-007', 'SAL-002'].includes(policy.id))
+      .filter((policy) => checks.some((check) => supportsCheck(policy, check)));
   }
-];
 
-function findRelatedPolicies(checks) {
-  const tags = new Set(checks.flatMap((check) => [check.checkName, check.result]));
-
-  return policies.filter((policy) => policy.tags.some((tag) => tags.has(tag)));
+  return policies.filter((policy) => actionableChecks.some((check) => supportsCheck(policy, check)));
 }
 
 function getOutputText(responseData) {
@@ -84,30 +63,12 @@ function requireString(value, fieldName) {
   return value.trim();
 }
 
-function requireStringList(value, fieldName) {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
-    throw makeAiError('AI_INVALID_ANALYSIS', `OpenAI response has an invalid ${fieldName} list.`);
-  }
-
-  return value.map((item) => item.trim()).filter(Boolean);
-}
-
 function normalizeAnalysis(value) {
   if (!value || typeof value !== 'object') {
     throw makeAiError('AI_INVALID_ANALYSIS', 'OpenAI response must be a JSON object.');
   }
 
-  if (!['low', 'medium', 'high'].includes(value.riskLevel)) {
-    throw makeAiError('AI_INVALID_ANALYSIS', 'OpenAI response has an invalid riskLevel.');
-  }
-
-  return {
-    summary: requireString(value.summary, 'summary'),
-    riskLevel: value.riskLevel,
-    explanation: requireString(value.explanation, 'explanation'),
-    recommendedActions: requireStringList(value.recommendedActions, 'recommendedActions'),
-    requiredDocuments: requireStringList(value.requiredDocuments, 'requiredDocuments')
-  };
+  return { explanation: requireString(value.explanation, 'explanation') };
 }
 
 const policyAnalysisFormat = {
@@ -117,40 +78,89 @@ const policyAnalysisFormat = {
   schema: {
     type: 'object',
     additionalProperties: false,
-    required: ['summary', 'riskLevel', 'explanation', 'recommendedActions', 'requiredDocuments'],
+    required: ['explanation'],
     properties: {
-      summary: {
-        type: 'string',
-        description: 'A one-sentence risk summary for the reviewer.'
-      },
-      riskLevel: {
-        type: 'string',
-        enum: ['low', 'medium', 'high'],
-        description: 'Overall review risk based only on supplied checks and policies.'
-      },
       explanation: {
         type: 'string',
-        description: 'A short explanation of why the rule result makes sense under the policies.'
-      },
-      recommendedActions: {
-        type: 'array',
-        description: 'Concrete next actions for a human loan reviewer.',
-        items: {
-          type: 'string'
-        }
-      },
-      requiredDocuments: {
-        type: 'array',
-        description: 'Documents the applicant should provide next, or an empty array if none.',
-        items: {
-          type: 'string'
-        }
+        description: 'Explain only the supplied check results using the supplied sample policies. Do not add actions, document requirements, or new facts.'
       }
     }
   }
 };
 
-async function generatePolicyAnalysis({ application, checks, policies }) {
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const REQUEST_TIMEOUT_MS = 25000;
+const MAX_RETRY_DELAY_MS = 1200;
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_CACHE_ENTRIES = 100;
+const analysisCache = new Map();
+
+function policyGuidance(checks, relatedPolicies, field) {
+  return relatedPolicies.flatMap((policy) => {
+    const checkNames = [...new Set(checks.filter((check) => supportsCheck(policy, check))
+      .map((check) => check.checkName))];
+    return (policy[field] ?? []).map((text) => ({
+      text,
+      policyIds: [policy.id],
+      checkNames
+    }));
+  });
+}
+
+function ruleSummary(status, checks) {
+  if (checks.length === 0) return 'Verification has not run yet.';
+  const flagged = checks.filter((check) => check.result !== 'passed');
+  if (flagged.length === 0) return 'The configured verification checks passed.';
+  const names = flagged.map((check) => check.checkName.replaceAll('_', ' ')).join(', ');
+  return status === 'manual_review_required'
+    ? `Human review is required for: ${names}.`
+    : `Additional evidence is needed for: ${names}.`;
+}
+
+async function requestPolicyAnalysis(apiKey, payload) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let response;
+    try {
+      response = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+      });
+    } catch (error) {
+      if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+        throw makeAiError('AI_TIMEOUT', 'The AI request timed out.');
+      }
+      if (attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        continue;
+      }
+      throw makeAiError('AI_NETWORK_ERROR', 'The AI service could not be reached.');
+    }
+
+    if (response.ok) return response;
+
+    if (attempt === 0 && RETRYABLE_STATUS.has(response.status)) {
+      const retryAfter = Number(response.headers?.get('retry-after'));
+      const delay = Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter * 1000 : 250 + Math.floor(Math.random() * 200);
+      if (delay <= MAX_RETRY_DELAY_MS) {
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+    }
+
+    const code = response.status === 429 ? 'AI_RATE_LIMITED'
+      : response.status === 401 || response.status === 403 ? 'AI_ACCESS_ERROR'
+        : 'AI_REQUEST_FAILED';
+    throw makeAiError(code, `AI service returned status ${response.status}.`);
+  }
+}
+
+async function generatePolicyAnalysis({ checks, policies }) {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
@@ -160,58 +170,24 @@ async function generatePolicyAnalysis({ application, checks, policies }) {
     );
   }
 
-  let response;
+  const response = await requestPolicyAnalysis(apiKey, {
+    model: process.env.OPENAI_MODEL ?? 'gpt-5-mini',
+    instructions:
+      'Explain the supplied rule checks using only the supplied sample policy clauses. Return one concise English paragraph under 120 words. Do not approve or reject the loan. Do not invent facts, recommend actions, or request documents; the application provides those from policy data.',
+    text: { format: policyAnalysisFormat },
+    input: JSON.stringify({
+      verificationChecks: checks.map(({ checkName, result, details }) => ({ checkName, result, details })),
+      relatedPolicies: policies.map(({ id, title, content }) => ({ id, title, content }))
+    })
+  });
 
+  let responseData;
   try {
-    response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_MODEL ?? 'gpt-5-mini',
-        instructions:
-          'You are a bank loan review assistant. Use only the supplied checks and policies. Do not approve or reject the loan. Return concise English text for the application UI. recommendedActions and requiredDocuments must be practical and specific. explanation must be under 120 words.',
-        text: {
-          format: policyAnalysisFormat
-        },
-        input: JSON.stringify(
-          {
-            application: {
-              id: application.id,
-              applicantName: application.applicantName,
-              declaredMonthlyIncome: application.declaredMonthlyIncome,
-              employerName: application.employerName,
-              requestedLoanAmount: application.requestedLoanAmount,
-              status: application.status
-            },
-            verificationChecks: checks,
-            relatedPolicies: policies
-          },
-          null,
-          2
-        )
-      })
-    });
-  } catch (error) {
-    throw makeAiError(
-      'AI_NETWORK_ERROR',
-      `Unable to connect to OpenAI API: ${error.cause?.code ?? error.message}`
-    );
+    responseData = await response.json();
+  } catch {
+    throw makeAiError('AI_INVALID_RESPONSE', 'AI service returned an unreadable response.');
   }
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => null);
-    const openAiError = errorData?.error;
-
-    throw makeAiError(
-      openAiError?.code ?? 'AI_REQUEST_FAILED',
-      openAiError?.message ?? `OpenAI request failed with status ${response.status}.`
-    );
-  }
-
-  const text = getOutputText(await response.json());
+  const text = getOutputText(responseData);
 
   if (!text) {
     throw makeAiError('AI_EMPTY_RESPONSE', 'OpenAI returned an empty policy analysis.');
@@ -220,18 +196,68 @@ async function generatePolicyAnalysis({ application, checks, policies }) {
   return normalizeAnalysis(parseJsonOutput(text));
 }
 
-export async function explainApplicationPolicies(application) {
-  const relatedPolicies = findRelatedPolicies(application.verificationResults);
-  const analysis = await generatePolicyAnalysis({
-    application,
-    checks: application.verificationResults,
-    policies: relatedPolicies
+async function cachedPolicyAnalysis(checks, policies) {
+  if (!process.env.OPENAI_API_KEY) return generatePolicyAnalysis({ checks, policies });
+  const key = JSON.stringify({
+    model: process.env.OPENAI_MODEL ?? 'gpt-5-mini',
+    checks: checks.map(({ checkName, result, details }) => ({ checkName, result, details })),
+    policies: policies.map(({ id, version }) => ({ id, version }))
   });
+  const cached = analysisCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise;
+  const promise = generatePolicyAnalysis({ checks, policies });
+  analysisCache.set(key, { promise, expiresAt: Date.now() + CACHE_TTL_MS });
+  if (analysisCache.size > MAX_CACHE_ENTRIES) {
+    analysisCache.delete(analysisCache.keys().next().value);
+  }
+  try {
+    return await promise;
+  } catch (error) {
+    analysisCache.delete(key);
+    throw error;
+  }
+}
+
+export async function explainApplicationPolicies(application) {
+  const checks = application.verificationResults;
+  const relatedPolicies = findRelatedPolicies(checks);
+  const recommendedActions = policyGuidance(checks, relatedPolicies, 'actions');
+  const requiredDocuments = policyGuidance(checks, relatedPolicies, 'documents');
+  let explanation = checks.length === 0
+    ? 'Run verification to generate policy guidance.'
+    : 'Review the verification checks against the matched sample policies below.';
+  let guidanceSource = 'ai';
+  let warning = null;
+  if (relatedPolicies.length === 0) {
+    guidanceSource = 'unavailable';
+    warning = checks.length === 0
+      ? 'Verification has not run yet.'
+      : 'No matching sample policy was found. Review the checks manually.';
+  } else {
+    try {
+      ({ explanation } = await cachedPolicyAnalysis(checks, relatedPolicies));
+    } catch (error) {
+      guidanceSource = 'unavailable';
+      warning = error.code === 'AI_NOT_CONFIGURED' ? 'AI guidance is not configured on this server.'
+        : error.code === 'AI_ACCESS_ERROR' ? 'AI guidance could not authenticate. Check API access.'
+          : error.code === 'AI_RATE_LIMITED' ? 'AI guidance is rate limited. Try again later.'
+            : 'AI guidance is temporarily unavailable. Review the checks and policies below.';
+      console.warn('[policy guidance]', error.code ?? 'AI_UNKNOWN_ERROR', error.message);
+    }
+  }
 
   return {
     applicationId: application.id,
     status: application.status,
+    riskLevel: checks.length === 0 || application.status === 'pending' ? 'not_assessed'
+      : application.status === 'manual_review_required' ? 'high'
+      : application.status === 'additional_documents_required' ? 'medium' : 'low',
     relatedPolicies,
-    ...analysis
+    guidanceSource,
+    warning,
+    summary: ruleSummary(application.status, checks),
+    explanation,
+    recommendedActions,
+    requiredDocuments
   };
 }

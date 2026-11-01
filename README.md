@@ -23,7 +23,7 @@ Stratton Oakmont Loan Advisor explores a practical way to make that process easi
 - AI turns those facts and policies into concise, reviewer-friendly guidance;
 - a human remains responsible for the actual lending decision.
 
-The core idea is to use AI for explanation, not authority. Rules determine the pre-screening status; the model explains the result and suggests sensible next steps.
+The core idea is to use AI for explanation, not authority. Rules determine the pre-screening status; the model explains the result, while retrieved sample policies define next steps.
 
 ## What the Website Does
 
@@ -34,7 +34,7 @@ The core idea is to use AI for explanation, not authority. Rules determine the p
 - Checks document completeness, applicant identity, employer consistency, income consistency, and salary history.
 - Assigns one of three pre-screening outcomes: `verification_passed`, `additional_documents_required`, or `manual_review_required`.
 - Retrieves policies related to the verification results.
-- Uses the OpenAI Responses API to produce structured risk guidance, recommended actions, and document requests.
+- Uses the OpenAI Responses API for a structured explanation. Rule results and sample policy clauses supply the risk level, recommended actions, and document requests.
 - Lets reviewers re-run verification on the saved application.
 
 ## Product Tour
@@ -86,11 +86,11 @@ Income gaps above 10% request more documents, while gaps above 15% require manua
 
 ### 6. Turn policy context into useful guidance
 
-The AI section shows a risk level, a short summary, a policy-grounded explanation, recommended actions, requested documents, and the policies used as context.
+The review section shows a rule-based risk level, a short summary, an AI explanation, policy-defined actions and document requests, and the policies used as context. If AI is unavailable, the page still shows the verification checks and policy guidance with a clear warning.
 
 ![AI-generated risk guidance and related lending policies](<showcase images/Screenshot 2026-08-08 at 9.44.25 PM.png>)
 
-The model receives only the saved application summary, deterministic verification results, and matched policy text. It is explicitly instructed not to approve or reject the loan.
+The model receives only verification check names, outcomes, details, and matched sample policy text. Applicant names, employer names, loan amounts, and uploaded documents are not included in the AI request. It is explicitly instructed not to approve or reject the loan.
 
 ## How It Works
 
@@ -101,7 +101,7 @@ flowchart LR
     C --> D[(PostgreSQL)]
     C --> E[Deterministic verification]
     E --> D
-    D --> F[Policy retrieval by check tags]
+    D --> F[Policy retrieval by check and outcome]
     F --> G[OpenAI structured analysis]
     G --> H[Human-readable review guidance]
     E --> H
@@ -114,8 +114,8 @@ flowchart LR
 4. The backend runs all verification rules and persists each individual result.
 5. The result page loads the application and requests its policy explanation.
 6. The backend matches policy entries to the rule names and outcomes.
-7. The OpenAI Responses API returns JSON constrained by a strict schema.
-8. The UI presents both the original rule results and the AI-generated explanation to the reviewer.
+7. The OpenAI Responses API returns an explanation constrained by a strict JSON schema. Successful explanations are cached for five minutes to reduce repeated API calls.
+8. The UI presents the rule results, policy-defined actions and document requests, and the AI explanation. Rule results appear while the explanation is still loading.
 
 ## Design Principles
 
@@ -154,7 +154,7 @@ Documents are parsed client-side, and the server stores structured content rathe
 | Server OS | Amazon Linux | Production Linux environment and service management |
 | Production web service | Nginx + systemd | Reverse proxy, process supervision, and restart on boot |
 
-Policy retrieval is currently a small, transparent tag-matching implementation. It is RAG-style in that relevant policy content is selected and supplied to the model, but it does not currently use embeddings or a vector index.
+Policy retrieval uses 22 versioned sample clauses in `server/policies.json`, covering missing documents, identity and employer checks, income gaps at both configured thresholds, missing bank salary data, salary history, and passed checks. The backend matches clauses to verification check names, outcomes, and relevant result details, prioritizing checks that need action. Recommendations and document requests are selected from explicit policy fields and cite their policy and check; the model cannot add new ones. The review status and risk level come from deterministic verification results. The corpus is demonstration material, not real bank policy. Embeddings and vector search are not used yet.
 
 ## Project Structure
 
@@ -191,7 +191,7 @@ Policy retrieval is currently a small, transparent tag-matching implementation. 
 - Node.js 18 or newer
 - npm
 - Docker with Docker Compose
-- An OpenAI API key for the AI guidance section
+- An OpenAI API key for optional AI explanation; rule and policy guidance still works without one
 
 ### 1. Install dependencies
 
@@ -216,7 +216,7 @@ OPENAI_MODEL=gpt-5-mini
 
 Never commit a real `OPENAI_API_KEY`.
 
-The current `npm run dev:server` script sets `HTTP_PROXY` and `HTTPS_PROXY` to `http://127.0.0.1:7897` for OpenAI requests. If you do not use a proxy at that address, remove or replace those values in `package.json` before starting the development server.
+The development server connects to the OpenAI API directly. If your network requires a proxy, configure it explicitly in your own environment before starting the server.
 
 ### 3. Start PostgreSQL
 
@@ -236,7 +236,7 @@ npm run db:setup
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173). Vite proxies `/api` requests to the Express server at `http://localhost:3000`.
+Open [http://localhost:5173](http://localhost:5173). Vite proxies `/api` requests to the development Express server at `http://localhost:8765`. `npm start` still uses `PORT` from `.env` (default 3000).
 
 ## Cloud Deployment
 
@@ -287,7 +287,7 @@ Each folder contains an application JSON file and the relevant supporting files.
 | `npm run dev:client` | Run only the Vite frontend |
 | `npm run db:setup` | Apply the PostgreSQL schema |
 | `npm run typecheck` | Check the TypeScript frontend |
-| `npm test` | Run the current validation suite (TypeScript checking) |
+| `npm test` | Run TypeScript checking and focused policy/API fallback tests |
 | `npm run build` | Type-check and create the frontend production build |
 | `npm start` | Serve the API and an existing `dist/` build on port 3000 |
 | `npm run preview` | Build the frontend and start the production-style server |
@@ -311,26 +311,27 @@ Example policy-explanation response:
 {
   "data": {
     "applicationId": 3,
-    "status": "verification_passed",
+    "status": "additional_documents_required",
     "relatedPolicies": [
       {
-        "id": "INC-001",
-        "title": "Income Verification Policy",
-        "tags": [
-          "payslip_income_match",
-          "bank_income_match",
-          "additional_documents_required"
-        ],
-        "content": "Income differences above 10% may require additional documents, and differences above 15% should be escalated."
+        "id": "SAL-001",
+        "title": "Short Salary History",
+        "version": "demo-v2",
+        "source": "Sample policy corpus for demonstration",
+        "content": "If salary deposits appear in fewer than three distinct months, request additional salary history before relying on income stability.",
+        "appliesTo": [{ "checkName": "salary_stability", "results": ["additional_documents_required"] }],
+        "documents": ["Additional salary history."]
       }
     ],
-    "summary": "The submitted identity and income evidence passed the configured checks.",
-    "riskLevel": "low",
-    "explanation": "The supplied records are consistent with the retrieved policies.",
-    "recommendedActions": [
-      "Continue with standard credit and affordability checks."
-    ],
-    "requiredDocuments": []
+    "summary": "Additional evidence is needed for: salary stability.",
+    "riskLevel": "medium",
+    "guidanceSource": "ai",
+    "warning": null,
+    "explanation": "The salary history covers fewer than three months.",
+    "recommendedActions": [],
+    "requiredDocuments": [
+      { "text": "Additional salary history.", "policyIds": ["SAL-001"], "checkNames": ["salary_stability"] }
+    ]
   },
   "error": null
 }
@@ -341,18 +342,18 @@ Example policy-explanation response:
 - The project is an MVP and is not suitable for real lending decisions.
 - CSV parsing intentionally supports a simple comma-separated sample format; it is not a full RFC-compliant parser.
 - JSON payloads and extracted fields have minimal runtime validation.
-- Policies are stored in application code and retrieved by tags, not from a managed policy repository or vector database.
-- The AI explanation requires network access and a valid OpenAI API key.
+- Policies are stored in a versioned sample JSON file, not an approved bank policy repository or vector database.
+- AI-generated explanations require network access and a valid OpenAI API key. Missing configuration, transient network failures, rate limits, and invalid AI output leave rule results, policy-defined guidance, and matched policies visible with an explicit warning.
 - The model output is schema-validated, but it must still be reviewed by a person.
 - Authentication, authorization, audit logging, encryption strategy, document retention, observability, and production security controls are not implemented.
 - Currency formatting currently uses USD, while the sample address is in Singapore; production deployments should make currency and locale explicit.
-- Automated backend and browser tests have not yet been added; `npm test` currently runs TypeScript validation only.
+- `npm test` runs TypeScript validation and focused policy retrieval, guidance, retry, and cache tests; browser tests have not yet been added.
 
 ## Possible Next Steps
 
 - Add runtime schemas for every uploaded document and API request.
 - Add authentication, reviewer roles, audit history, and application search.
-- Move policies into a versioned repository with approval metadata and effective dates.
+- Move sample policies into an approved repository with ownership, effective dates, and a review workflow.
 - Add embeddings and PostgreSQL vector search when the policy corpus grows large enough to justify it.
 - Add OCR and secure object storage for real PDF or image documents.
 - Add credit, affordability, fraud, and compliance integrations behind clearly separated review stages.

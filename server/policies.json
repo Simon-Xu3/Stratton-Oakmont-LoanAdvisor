@@ -1,0 +1,390 @@
+[
+  {
+    "id": "DOC-001",
+    "title": "Document Set Completeness",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "The application form, payslip, and bank statement are required before document review is complete. Request any missing item.",
+    "appliesTo": [
+      {
+        "checkName": "document_completeness",
+        "results": [
+          "additional_documents_required"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "DOC-002",
+    "title": "Missing Application Form",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "If the application form is missing, request the completed form before continuing review.",
+    "appliesTo": [
+      {
+        "checkName": "document_completeness",
+        "results": [
+          "additional_documents_required"
+        ],
+        "includeDetailsContaining": "application_form"
+      }
+    ],
+    "documents": [
+      "Completed application form."
+    ]
+  },
+  {
+    "id": "DOC-003",
+    "title": "Missing Payslip",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "If the payslip is missing, request it before checking name, employer, or payslip income.",
+    "appliesTo": [
+      {
+        "checkName": "document_completeness",
+        "results": [
+          "additional_documents_required"
+        ],
+        "includeDetailsContaining": "payslip"
+      }
+    ],
+    "documents": [
+      "Payslip."
+    ]
+  },
+  {
+    "id": "DOC-004",
+    "title": "Missing Bank Statement",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "If the bank statement is missing, request transaction history before relying on bank salary checks.",
+    "appliesTo": [
+      {
+        "checkName": "document_completeness",
+        "results": [
+          "additional_documents_required"
+        ],
+        "includeDetailsContaining": "bank_statement"
+      }
+    ],
+    "documents": [
+      "Bank statement with transaction history."
+    ]
+  },
+  {
+    "id": "DOC-005",
+    "title": "Complete Document Set",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "A complete document set allows the remaining checks to be considered; completeness alone does not establish eligibility.",
+    "appliesTo": [
+      {
+        "checkName": "document_completeness",
+        "results": [
+          "passed"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ID-001",
+    "title": "Applicant Name Mismatch",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "If the application and payslip names differ, refer the discrepancy for manual review.",
+    "appliesTo": [
+      {
+        "checkName": "name_match",
+        "results": [
+          "manual_review_required"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ID-002",
+    "title": "Identity Check Pending Payslip",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "When the payslip is absent, obtain it and rerun the applicant name comparison.",
+    "appliesTo": [
+      {
+        "checkName": "name_match",
+        "results": [
+          "additional_documents_required"
+        ],
+        "includeDetailsContaining": "Payslip is missing"
+      }
+    ],
+    "actions": [
+      "Rerun the applicant name comparison after the payslip is provided."
+    ]
+  },
+  {
+    "id": "ID-003",
+    "title": "Applicant Name Matched",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "A matching application and payslip name resolves the name comparison only; other checks remain independent.",
+    "appliesTo": [
+      {
+        "checkName": "name_match",
+        "results": [
+          "passed"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "EMP-001",
+    "title": "Employer Name Mismatch",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "If the application and payslip employer names do not match after normalization, refer the discrepancy for manual review.",
+    "appliesTo": [
+      {
+        "checkName": "employer_match",
+        "results": [
+          "manual_review_required"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "EMP-002",
+    "title": "Employer Check Pending Payslip",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "When the payslip is absent, request it before accepting an employer match.",
+    "appliesTo": [
+      {
+        "checkName": "employer_match",
+        "results": [
+          "additional_documents_required"
+        ],
+        "includeDetailsContaining": "Payslip is missing"
+      }
+    ]
+  },
+  {
+    "id": "EMP-003",
+    "title": "Employer Name Matched",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "A normalized employer name match resolves the employer comparison but does not verify income.",
+    "appliesTo": [
+      {
+        "checkName": "employer_match",
+        "results": [
+          "passed"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "INC-001",
+    "title": "Payslip Income Difference Above Ten Percent",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "If payslip income differs from declared income by more than 10% and no more than 15%, request supporting income evidence.",
+    "appliesTo": [
+      {
+        "checkName": "payslip_income_match",
+        "results": [
+          "additional_documents_required"
+        ],
+        "includeDetailsContaining": "more than 10%"
+      }
+    ],
+    "actions": [
+      "Request supporting evidence for the payslip income discrepancy."
+    ],
+    "documents": [
+      "Supporting income evidence."
+    ]
+  },
+  {
+    "id": "INC-002",
+    "title": "Payslip Income Difference Above Fifteen Percent",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "If payslip income differs from declared income by more than 15%, refer the discrepancy for manual review.",
+    "appliesTo": [
+      {
+        "checkName": "payslip_income_match",
+        "results": [
+          "manual_review_required"
+        ],
+        "includeDetailsContaining": "more than 15%"
+      }
+    ]
+  },
+  {
+    "id": "INC-003",
+    "title": "Bank Income Difference Above Ten Percent",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "If the bank salary average differs from declared income by more than 10% and no more than 15%, request supporting income evidence.",
+    "appliesTo": [
+      {
+        "checkName": "bank_income_match",
+        "results": [
+          "additional_documents_required"
+        ],
+        "includeDetailsContaining": "more than 10%"
+      }
+    ],
+    "actions": [
+      "Request supporting evidence for the bank income discrepancy."
+    ],
+    "documents": [
+      "Supporting income evidence."
+    ]
+  },
+  {
+    "id": "INC-004",
+    "title": "Bank Income Difference Above Fifteen Percent",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "If the bank salary average differs from declared income by more than 15%, refer the discrepancy for manual review.",
+    "appliesTo": [
+      {
+        "checkName": "bank_income_match",
+        "results": [
+          "manual_review_required"
+        ],
+        "includeDetailsContaining": "more than 15%"
+      }
+    ]
+  },
+  {
+    "id": "INC-005",
+    "title": "Bank Salary Average Unavailable",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "If no bank salary average is available, request transaction history showing salary deposits before treating bank income as verified.",
+    "appliesTo": [
+      {
+        "checkName": "bank_income_match",
+        "results": [
+          "additional_documents_required"
+        ],
+        "includeDetailsContaining": "is missing"
+      }
+    ],
+    "documents": [
+      "Transaction history showing salary deposits."
+    ]
+  },
+  {
+    "id": "INC-006",
+    "title": "Payslip Income Check Passed",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "A passed payslip income check means the amount is within the configured 10% tolerance; bank salary remains a separate check.",
+    "appliesTo": [
+      {
+        "checkName": "payslip_income_match",
+        "results": [
+          "passed"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "INC-007",
+    "title": "Bank Income Check Passed",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "A passed bank income check means the salary average is within the configured 10% tolerance; this is not a lending decision.",
+    "appliesTo": [
+      {
+        "checkName": "bank_income_match",
+        "results": [
+          "passed"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "SAL-001",
+    "title": "Short Salary History",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "If salary deposits appear in fewer than three distinct months, request additional salary history before relying on income stability.",
+    "appliesTo": [
+      {
+        "checkName": "salary_stability",
+        "results": [
+          "additional_documents_required"
+        ]
+      }
+    ],
+    "documents": [
+      "Additional salary history."
+    ]
+  },
+  {
+    "id": "SAL-002",
+    "title": "Salary History Check Passed",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "Salary deposits in at least three distinct months satisfy the history check; amounts require a separate income comparison.",
+    "appliesTo": [
+      {
+        "checkName": "salary_stability",
+        "results": [
+          "passed"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "REV-001",
+    "title": "Identity or Employer Escalation",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "A material name or employer mismatch requires a human reviewer to resolve the discrepancy.",
+    "appliesTo": [
+      {
+        "checkName": "name_match",
+        "results": [
+          "manual_review_required"
+        ]
+      },
+      {
+        "checkName": "employer_match",
+        "results": [
+          "manual_review_required"
+        ]
+      }
+    ],
+    "actions": [
+      "Refer the identity or employer discrepancy to a human reviewer."
+    ]
+  },
+  {
+    "id": "REV-002",
+    "title": "Income Escalation",
+    "version": "demo-v2",
+    "source": "Sample policy corpus for demonstration",
+    "content": "An income discrepancy above the configured 15% threshold requires manual review; generated guidance alone cannot resolve it.",
+    "appliesTo": [
+      {
+        "checkName": "payslip_income_match",
+        "results": [
+          "manual_review_required"
+        ]
+      },
+      {
+        "checkName": "bank_income_match",
+        "results": [
+          "manual_review_required"
+        ]
+      }
+    ],
+    "actions": [
+      "Refer the income discrepancy to a human reviewer."
+    ]
+  }
+]

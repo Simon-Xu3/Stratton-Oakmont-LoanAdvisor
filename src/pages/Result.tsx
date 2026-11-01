@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ClipboardList, RefreshCw } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { getApplication, getPolicyExplanation, runVerification } from '../api/api';
@@ -27,6 +27,9 @@ function formatLabel(value: string) {
 }
 
 function riskTone(riskLevel: PolicyExplanation['riskLevel']) {
+  if (riskLevel === 'not_assessed') {
+    return 'border-line bg-slate-50 text-steel';
+  }
   if (riskLevel === 'high') {
     return 'border-rose-200 bg-rose-50 text-rose-700';
   }
@@ -53,10 +56,13 @@ export function Result() {
   const [application, setApplication] = useState<LoanApplication | null>(null);
   const [policyExplanation, setPolicyExplanation] = useState<PolicyExplanation | null>(null);
   const [policyError, setPolicyError] = useState<string | null>(null);
+  const [isPolicyLoading, setIsPolicyLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestId = useRef(0);
 
   async function loadApplication() {
+    const currentRequest = ++requestId.current;
     const applicationId = Number(id);
 
     if (!Number.isInteger(applicationId) || applicationId <= 0) {
@@ -69,30 +75,41 @@ export function Result() {
     setError(null);
     setPolicyExplanation(null);
     setPolicyError(null);
+    setIsPolicyLoading(false);
 
     try {
       const data = await getApplication(applicationId);
+      if (currentRequest !== requestId.current) return;
       setApplication(data);
+      setIsLoading(false);
+      setIsPolicyLoading(true);
 
       try {
-        setPolicyExplanation(await getPolicyExplanation(applicationId));
+        const guidance = await getPolicyExplanation(applicationId);
+        if (currentRequest === requestId.current) setPolicyExplanation(guidance);
       } catch (policyLoadError) {
-        setPolicyExplanation(null);
-        setPolicyError(
-          policyLoadError instanceof Error
-            ? policyLoadError.message
-            : 'Unable to generate policy explanation.'
-        );
+        if (currentRequest === requestId.current) {
+          setPolicyError(
+            policyLoadError instanceof Error
+              ? policyLoadError.message
+              : 'Unable to generate policy explanation.'
+          );
+        }
+      } finally {
+        if (currentRequest === requestId.current) setIsPolicyLoading(false);
       }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load application.');
+      if (currentRequest === requestId.current) {
+        setError(loadError instanceof Error ? loadError.message : 'Unable to load application.');
+      }
     } finally {
-      setIsLoading(false);
+      if (currentRequest === requestId.current) setIsLoading(false);
     }
   }
 
   useEffect(() => {
     loadApplication();
+    return () => { requestId.current += 1; };
   }, [id]);
 
   async function verifyAgain() {
@@ -100,15 +117,20 @@ export function Result() {
       return;
     }
 
+    const currentRequest = ++requestId.current;
     setIsLoading(true);
+    setIsPolicyLoading(false);
     setError(null);
 
     try {
       await runVerification(application.id);
+      if (currentRequest !== requestId.current) return;
       await loadApplication();
     } catch (verifyError) {
-      setError(verifyError instanceof Error ? verifyError.message : 'Unable to run verification.');
-      setIsLoading(false);
+      if (currentRequest === requestId.current) {
+        setError(verifyError instanceof Error ? verifyError.message : 'Unable to run verification.');
+        setIsLoading(false);
+      }
     }
   }
 
@@ -223,11 +245,16 @@ export function Result() {
 
               {policyExplanation ? (
                 <>
+                  {policyExplanation.warning ? (
+                    <div className="mt-6 border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800" role="status">
+                      {policyExplanation.warning}
+                    </div>
+                  ) : null}
                   <div className="mt-6 grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
                     <div className={`border px-4 py-3 ${riskTone(policyExplanation.riskLevel)}`}>
-                      <p className="text-xs font-bold uppercase">Risk level</p>
+                      <p className="text-xs font-bold uppercase">Rule-based risk level</p>
                       <p className="mt-1 text-xl font-bold capitalize">
-                        {policyExplanation.riskLevel}
+                        {formatLabel(policyExplanation.riskLevel)}
                       </p>
                     </div>
                     <div className="border border-line bg-slate-50 px-4 py-3">
@@ -246,11 +273,18 @@ export function Result() {
                     <div className="border border-line bg-slate-50 px-4 py-3">
                       <h3 className="text-xs font-bold uppercase text-steel">Recommended next actions</h3>
                       {policyExplanation.recommendedActions.length === 0 ? (
-                        <p className="mt-2 text-sm font-semibold text-steel">No actions returned.</p>
+                        <p className="mt-2 text-sm font-semibold text-steel">
+                          No additional action is specified by the matched sample policies.
+                        </p>
                       ) : (
                         <ul className="mt-3 grid gap-2 text-sm font-semibold leading-6 text-steel">
-                          {policyExplanation.recommendedActions.map((action) => (
-                            <li key={action}>{action}</li>
+                          {policyExplanation.recommendedActions.map((action, index) => (
+                            <li key={`${action.text}-${index}`}>
+                              {action.text}
+                              <span className="block text-xs font-normal text-slate-500">
+                                Evidence: {action.policyIds.join(', ')} · {action.checkNames.map(formatLabel).join(', ')}
+                              </span>
+                            </li>
                           ))}
                         </ul>
                       )}
@@ -259,11 +293,18 @@ export function Result() {
                     <div className="border border-line bg-slate-50 px-4 py-3">
                       <h3 className="text-xs font-bold uppercase text-steel">Requested documents</h3>
                       {policyExplanation.requiredDocuments.length === 0 ? (
-                        <p className="mt-2 text-sm font-semibold text-steel">No extra documents returned.</p>
+                        <p className="mt-2 text-sm font-semibold text-steel">
+                          No additional document is specified by the matched sample policies.
+                        </p>
                       ) : (
                         <ul className="mt-3 grid gap-2 text-sm font-semibold leading-6 text-steel">
-                          {policyExplanation.requiredDocuments.map((document) => (
-                            <li key={document}>{document}</li>
+                          {policyExplanation.requiredDocuments.map((document, index) => (
+                            <li key={`${document.text}-${index}`}>
+                              {document.text}
+                              <span className="block text-xs font-normal text-slate-500">
+                                Evidence: {document.policyIds.join(', ')} · {document.checkNames.map(formatLabel).join(', ')}
+                              </span>
+                            </li>
                           ))}
                         </ul>
                       )}
@@ -279,8 +320,8 @@ export function Result() {
                       {policyExplanation.relatedPolicies.map((policy) => (
                         <PolicyCard
                           key={policy.id}
-                          title={`${policy.id} · ${policy.title}`}
-                          body={policy.content}
+                          title={`${policy.id} · ${policy.title} (${policy.version})`}
+                          body={`${policy.content} Source: ${policy.source}.`}
                         />
                       ))}
                     </div>
@@ -288,7 +329,7 @@ export function Result() {
                 </>
               ) : (
                 <div className="mt-6 border border-line bg-slate-50 px-4 py-3 text-sm font-bold text-steel">
-                  {policyError ?? 'AI review guidance is not available yet.'}
+                  {isPolicyLoading ? 'Loading policy guidance…' : policyError ?? 'Policy guidance is not available yet.'}
                 </div>
               )}
             </section>
